@@ -140,7 +140,7 @@ io.on('connection', (socket) => {
       }
   
       // Créez le message et associez-le au groupe
-      await prisma.message.create({
+      const message = await prisma.message.create({
         data: {
           content,
           userId: sender,
@@ -157,6 +157,8 @@ io.on('connection', (socket) => {
   
       // Émettez les conversations mises à jour
       socket.emit('allConversations', conversations);
+      console.log(message)
+      socket.emit('message', message);
     } catch (error) {
       console.error('Erreur lors de l\'envoi du message:', error.message);
       socket.emit('error', error.message);

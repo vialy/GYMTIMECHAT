@@ -3,27 +3,27 @@
     <v-row>
       <v-col cols="4">
         <v-list dense>
-          <div style="">
-            <p style="font-weight: bold; padding-left: 20px; display: flex; align-items: center; justify-content: space-between;">Conversations</p>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <p style="font-weight: bold; padding-left: 20px;">Conversations</p>
             <v-menu offset-y>
-            <template v-slot:activator="{ on, attrs }">
-              <v-btn icon v-bind="attrs" v-on="on">
-                <v-icon>mdi-dots-vertical</v-icon>
-              </v-btn>
-            </template>
-          <v-list>
-            <v-list-item>
-              <v-btn @click="openCreateConversation">
-                <v-list-item-title>Créer une conversation</v-list-item-title>
-              </v-btn>
-            </v-list-item>
-            <v-list-item>
-              <v-btn @click="chooseUser">
-                <v-list-item-title>Choisir un utilisateur</v-list-item-title>
-              </v-btn>
-            </v-list-item>
-          </v-list>
-        </v-menu>
+              <template v-slot:activator="{ on, attrs }">
+                <v-btn icon v-bind="attrs" v-on="on">
+                  <v-icon>mdi-dots-vertical</v-icon>
+                </v-btn>
+              </template>
+              <v-list>
+                <v-list-item>
+                  <v-btn @click="openCreateConversation">
+                    <v-list-item-title>Créer une conversation</v-list-item-title>
+                  </v-btn>
+                </v-list-item>
+                <!-- <v-list-item>
+                  <v-btn @click="chooseUser">
+                    <v-list-item-title>Choisir un utilisateur</v-list-item-title>
+                  </v-btn>
+                </v-list-item> -->
+              </v-list>
+            </v-menu>
           </div>
           <v-list-item v-for="conversation in conversations" :key="conversation.id" @click="selectConversation(conversation)">
             <!-- <v-list-item-avatar>
@@ -143,15 +143,14 @@ export default {
     this.socket.emit("getConversations");
 
     this.socket.on("allConversations", conversations=>{
-      console.log(conversations);
       this.conversations = conversations;
+      console.log(this.selectedConversation);
     });
 
     this.socket.on('message', (message) => {
-      console.log(message)
-      const conversation = this.conversations.find(conv => conv.id === message.conversationId);
+      const conversation = this.conversations.find(conv => conv.id === message.groupId);
       if (conversation) {
-        conversation.messages.push(message);
+        this.selectedConversation.messages.push(message);
       }
     });
 
@@ -176,7 +175,6 @@ export default {
       }
 
       this.socket.emit('sendMessage', message);
-      console.log(message)
       this.newMessage = '';
     },
 
@@ -189,11 +187,20 @@ export default {
       this.dialog = false;
     },
 
+    async fetchUserInfo(){
+      try {
+        const response = await fetch("");
+        
+      } catch (error) {
+        
+      }
+    },
+
     async fetchMembers() {
       try {
 
-        // const response = await fetch('/members');
-        // const data = await response.json();
+        const response = await fetch('/members');
+        const data = await response.json();
 
         this.members = [
           {
