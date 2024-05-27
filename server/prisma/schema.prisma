@@ -1,0 +1,34 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String      @id
+  messages  Message[]
+  groups    Group[]  @relation("GroupMembers")
+  admin    Group[]  @relation("Admin")
+}
+
+model Group {
+  id       String      @id @default(uuid())
+  name     String
+  ownerId  String
+  owner    User     @relation("Admin", fields: [ownerId], references: [id])
+  messages Message[]
+  members  User[]   @relation("GroupMembers")
+}
+
+model Message {
+  id       Int      @id @default(autoincrement())
+  content  String
+  userId   String
+  groupId  String?
+  user     User     @relation(fields: [userId], references: [id])
+  group    Group?   @relation(fields: [groupId], references: [id])
+  createdAt DateTime @default(now())
+}
