@@ -189,7 +189,7 @@ export default {
 
     async fetchUserInfo(){
       try {
-        const response = await fetch("");
+        const response = await fetch("https://gymtime-backend.onrender.com/v1/user/user-info");
         
       } catch (error) {
         
