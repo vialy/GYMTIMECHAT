@@ -17,11 +17,6 @@
                     <v-list-item-title>Créer une conversation</v-list-item-title>
                   </v-btn>
                 </v-list-item>
-                <!-- <v-list-item>
-                  <v-btn @click="chooseUser">
-                    <v-list-item-title>Choisir un utilisateur</v-list-item-title>
-                  </v-btn>
-                </v-list-item> -->
               </v-list>
             </v-menu>
           </div>
@@ -55,7 +50,29 @@
             <!-- <span>Conversation name</span> -->
             <span v-if="selectedConversation">{{ selectedConversation.name }}</span>
             <v-spacer></v-spacer>
-            <v-btn v-if="selectedConversation" @click="leaveConversation">Leave</v-btn>
+            <v-menu offset-y v-if="selectedConversation">
+              <template v-slot:activator="{ on, attrs }">
+                <v-btn icon v-bind="attrs" v-on="on">
+                  <v-icon>mdi-dots-vertical</v-icon>
+                </v-btn>
+              </template>
+              <v-list>
+                <v-list-item>
+                  <v-btn v-if="selectedConversation" @click="leaveConversation">close chat</v-btn>
+                </v-list-item>
+                <v-list-item>
+                  <v-btn v-if="selectedConversation" @click="openAddUserDialog">Add user to chat</v-btn>
+                </v-list-item>
+                <v-list-item>
+                  <v-btn v-if="selectedConversation" @click="deleteChat">Delete chat</v-btn>
+                </v-list-item>
+                <!-- <v-list-item>
+                  <v-btn @click="chooseUser">
+                    <v-list-item-title>Choisir un utilisateur</v-list-item-title>
+                  </v-btn>
+                </v-list-item> -->
+              </v-list>
+            </v-menu>
           </v-card-title>
           <v-card-text>
             <div v-if="selectedConversation" class="messages"> 
@@ -96,8 +113,8 @@
               <v-select
                 v-model="selectedMembers"
                 :items="members"
-                item-text="name"
-                item-value="id"
+                item-text="firstName"
+                item-value="_id"
                 label="Membres"
                 :rules="[rules.required]"
                 multiple
@@ -111,12 +128,43 @@
             <v-btn color="blue darken-1" text @click="createConversation">Créer</v-btn>
           </v-card-actions>
         </v-card>
-      </v-dialog>
+    </v-dialog>
+
+    <!-- Add user to conversation dialog -->
+    <v-dialog v-model="addUserDialog" max-width="500px">
+        <v-card>
+          <v-card-title>
+            <span class="headline">Add users</span>
+          </v-card-title>
+          <v-card-text>
+            <v-form ref="form" v-model="valid">
+              <v-select
+                v-model="selectedMembers"
+                :items="members"
+                item-text="firstName"
+                item-value="_id"
+                label="Membres"
+                :rules="[rules.required]"
+                multiple
+                chips
+              ></v-select>
+            </v-form>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn color="blue darken-1" text @click="closeAddUserDialog">Annuler</v-btn>
+            <v-btn color="blue darken-1" text @click="addUserToChat">Créer</v-btn>
+          </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+
   </v-container>
 </template>
 
 <script>
 import io from 'socket.io-client';
+import moment from 'moment'
 
 export default {
   data() {
@@ -126,6 +174,7 @@ export default {
       conversations: [],
       selectedConversation: null,
       newMessage: '',
+      addUserDialog: false,
       dialog: false,
       valid: false,
       groupName: '',
@@ -137,11 +186,12 @@ export default {
     };
   },
   mounted() {
-    localStorage.setItem("userId", Math.floor(Math.random()*1000)+1+"_userid");
-    this.userId = localStorage.getItem("userId");
+    this.userId = "fca087c90d6c4ed582c1e7f1b8f16ef2";
+    // this.userId = localStorage.getItem("userId");
+    this.fetchMembers();
+    // this.fetchUserInfo();
     this.socket = io('http://localhost:5000');
     this.socket.emit("getConversations");
-
     this.socket.on("allConversations", conversations=>{
       this.conversations = conversations;
       console.log(this.selectedConversation);
@@ -166,6 +216,28 @@ export default {
       this.selectedConversation = null;
     },
 
+    addUserToChat(){
+
+      let data = {
+        conversationId: this.selectedConversation.id,
+        users: this.members
+      }
+      this.socket.emit("addUserToChat", data)
+      this.members = []
+      this.addUserDialog = false
+
+    },
+
+    deleteChat(){
+      if(confirm('Do you wan tit delete the chat ?')){
+        let data = {
+          groupId: this.selectedConversation,
+          admin: this.userId
+        }
+        this.socket.emit("deleteChat", data)
+      }
+    },
+
     sendMessage() {
       const message = {
         conversationId: this.selectedConversation.id,
@@ -178,9 +250,16 @@ export default {
       this.newMessage = '';
     },
 
+    async openAddUserDialog(){
+      this.addUserDialog = true
+    },
+    
+    async closeAddUserDialog(){
+      this.addUserDialog = false
+    },
+
     async openCreateConversation() {
       this.dialog = true;
-      await this.fetchMembers();
     },
 
     closeDialog() {
@@ -190,32 +269,29 @@ export default {
     async fetchUserInfo(){
       try {
         const response = await fetch("https://gymtime-backend.onrender.com/v1/user/user-info");
-        
+        localStorage.setItem("userInfo", response.data)
       } catch (error) {
-        
+        console.log(error);
       }
     },
 
     async fetchMembers() {
       try {
+        const myHeaders = new Headers();
+        myHeaders.append("Content-Type", "application/json");
+        myHeaders.append("Authorization", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmaXJzdE5hbWUiOiJBbnNlbCIsImxhc3ROYW1lIjoiQXl1ayIsImdlbmRlciI6MCwidXNlclR5cGUiOjUsImlzRW1haWxWZXJpZmllZCI6dHJ1ZSwiZW1haWwiOiJheXVla3BAZ21haWwuY29tIiwic2hvcnRJZCI6IkFVUTRMOUxMNExPOUhBOVciLCJhdmF0YXIiOiJodHRwczovL2Jpei50cmFuemFrLm5ldC9sb2dvLnBuZyIsImJpbyI6IlRoaXMgaXMgbXkgcGVyc29uYWwgYWNjb3VudCBJIGFtIHRoZSBtYW4gb2YgbWVuIiwidXNlcklkIjoiZmNhMDg3YzkwZDZjNGVkNTgyYzFlN2YxYjhmMTZlZjIiLCJpYXQiOjE3MTY5OTU5NzIsImV4cCI6MTcyNDc3MTk3Mn0.AlmkBqBcPqkZ64YxteC-xW_vfJ2jAKBpbHw5BeRy7ds");
 
-        const response = await fetch('/members');
+        const requestOptions = {
+          method: "POST",
+          headers: myHeaders,
+          body: JSON.stringify({}),
+          redirect: "follow"
+        };
+        const response = await fetch('https://gymtime-backend.onrender.com/v1/user/services/list', requestOptions);
         const data = await response.json();
-
-        this.members = [
-          {
-            id: "2388",
-            name: 'Lyz',
-          },
-          {
-            id: "44555",
-            name: 'Anton',
-          },
-          {
-            id: "655",
-            name: 'John',
-          },
-        ];
+        let membersList = data?.data.list;
+        console.log(membersList)
+        this.members = [...membersList];
 
       } catch (error) {
         console.error('Erreur lors de la récupération des membres:', error);
@@ -226,14 +302,17 @@ export default {
 
     createConversation() {
       if (this.$refs.form.validate()) {
-        this.socket.emit("createConversation", { name : this.groupName, users: this.selectedMembers});
+        this.socket.emit("createConversation", { name : this.groupName, users: this.selectedMembers, admin: this.userId});
+        this.selectedMembers = []
+        this.groupName = ''
         this.closeDialog();
       }
     },
-
+    
     chooseUser() {
       console.log('Choisir un utilisateur');
     },
+
   }
 };
 </script>

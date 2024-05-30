@@ -1,34 +1,46 @@
 datasource db {
-  provider = "mysql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["mongodb"]
 }
 
 model User {
-  id        String      @id
-  messages  Message[]
-  groups    Group[]  @relation("GroupMembers")
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id String @unique
+  messages Message[]
   admin    Group[]  @relation("Admin")
+  userGroup User_Group[]
+}
+
+model User_Group{
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  id_user String
+  user  User @relation(fields: [id_user], references: [user_id])
+  id_group String @db.ObjectId
+  group Group @relation(fields: [id_group],  references: [id])
+
+  @@unique([id_user, id_group])
 }
 
 model Group {
-  id       String      @id @default(uuid())
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
   name     String
   ownerId  String
-  owner    User     @relation("Admin", fields: [ownerId], references: [id])
+  owner    User     @relation("Admin", fields: [ownerId], references: [user_id])
   messages Message[]
-  members  User[]   @relation("GroupMembers")
+  userGroup User_Group[]
 }
 
 model Message {
-  id       Int      @id @default(autoincrement())
-  content  String
-  userId   String
-  groupId  String?
-  user     User     @relation(fields: [userId], references: [id])
-  group    Group?   @relation(fields: [groupId], references: [id])
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  content   String
+  userId    String
+  groupId   String?  @db.ObjectId
+  user      User     @relation(fields: [userId], references: [user_id])
+  group     Group?   @relation(fields: [groupId], references: [id])
   createdAt DateTime @default(now())
 }

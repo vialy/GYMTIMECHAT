@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const { ObjectId } = require('mongodb');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -48,6 +49,7 @@ let conversations = [
   }
 ];
 
+
 io.on('connection', (socket) => {
 
   socket.on("getConversations",async ()=>{
@@ -62,7 +64,7 @@ io.on('connection', (socket) => {
   }
 
 
-);
+  );
 
   socket.on('joinConversation', (conversationId) => {
     socket.join(conversationId);
@@ -72,48 +74,171 @@ io.on('connection', (socket) => {
   // Create a conversation
   socket.on("createConversation", async (data)=>{
     try {
-      const existingUsers = await prisma.user.findMany({
-        where: {
-          id: { in: data.users },
-        },
-      });
-  
-      const existingUserIds = new Set(existingUsers.map(user => user.id));
-  
-      const newUsers = data.users.filter(userId => !existingUserIds.has(userId)).map(userId => ({
-        id: userId,
-      }));
-  
-      if (newUsers.length > 0) {
-        await prisma.user.createMany({
-          data: newUsers,
+
+      const usersNotInTable = [];
+
+      // Check  whether users exist
+      for (const userId of data.users) {
+        const user = await prisma.user.findFirst({
+          where: { user_id: userId },
         });
+        if (!user) {
+          usersNotInTable.push(userId);
+        }
       }
-  
+      
+      // Create user not yet existing
+      if (usersNotInTable.length > 0) {
+        const createdUsers = await prisma.user.createMany({
+          data: usersNotInTable.map((userId) => ({
+            user_id: userId,
+          })),
+        });
+      
+        console.log("Created users:", createdUsers);
+      } else {
+        console.log("All users already exist in the table.");
+      }
+
       // Créez le groupe
       const newGroup = await prisma.group.create({
         data: {
           name: data.name,
-          ownerId: data.users[0], 
-          members: {
-            connect: data.users.map(userId => ({ id: userId })),
-          },
-        },
-        include: {
-          members: true,
+          ownerId: data.admin,
         },
       });
-  
-      console.log('Groupe créé avec succès:', newGroup);
-      return newGroup;
+
+      // create user group
+      const userGroup = await prisma.user_Group.createMany({
+        data: data.users.map(user=>({
+          id_user: user,
+          id_group: newGroup.id
+        }))
+      });
+
+      // Get all the groups and return them
+      const conversations = await prisma.group.findMany(
+        {
+          include:{
+            messages: true
+          }
+        }
+      );
+      socket.emit("allConversations", conversations);
+
     } catch (error) {
       console.error('Erreur lors de la création du groupe:', error);
       throw error;
     }
   });
 
+  // Add user to conversation
+  socket.on("addUserToChat", async (data)=>{
+    try {
+      const usersNotInTable = [];
+      const usersNotInConversation = [];
+
+      // Check  whether users exist
+      for (const userId of data.users){
+        const user = await prisma.user.findFirst({
+          where: { user_id: userId._id.toString() },
+        });
+        if (!user) {
+          usersNotInTable.push(userId._id);
+        }
+      }
+      
+      // Create user not yet existing
+      if (usersNotInTable.length > 0) {
+        const createdUsers = await prisma.user.createMany({
+          data: usersNotInTable.map((userId) => ({
+            user_id: userId,
+          })),
+        });
+      
+        console.log("Created users:", createdUsers);
+      } else {
+        console.log("All users already exist in the table.");
+      }
+
+      // Check if the user is already in the group
+      for (const userId of data.users) {
+        const user = await prisma.user_Group.findFirst({
+          where: { 
+            id_user: userId._id,
+            id_group: data.conversationId
+          },
+        });
+        if (!user) {
+          usersNotInConversation.push(userId._id);
+        }
+      }
+
+      // Create users not yet in the conversation
+      if (usersNotInConversation.length > 0) {
+        const createdUsers = await prisma.user_Group.createMany({
+          data: usersNotInConversation.map((userId) => ({
+            id_user: userId,
+            id_group: data.conversationId
+          })),
+        });
+        console.log("Created users:", createdUsers);
+      } else {
+        console.log("All users already exist in the table.");
+      }
+
+      // Get all the groups and return them
+      const conversations = await prisma.group.findMany(
+        {
+          include:{
+            messages: true
+          }
+        }
+      );
+
+      console.log(conversations);
+      socket.emit("allConversations", conversations);
+      
+    } catch (error) {
+      console.log(error);
+    }
+  });
+
+  socket.on("deleteChat",  async (data)=>{
+    console.log(data);
+
+    try {
+      const user_converation = await prisma.user_Group.deleteMany({
+        where:{
+          id_group: data.groupId.id
+        }
+      });
+
+      const conversation = await prisma.group.delete({
+        where:{
+          ownerId: data.admin,
+          id: data.groupId.id
+        }
+      });
+  
+      // Get all the groups and return them
+      const conversations = await prisma.group.findMany(
+        {
+          include:{
+            messages: true
+          }
+        }
+      );
+      socket.emit("allConversations", conversations);
+      
+    } catch (error) {
+      throw new Error(error);
+    }
+  })
+
   socket.on('sendMessage', async (message) => {
     const { conversationId, sender, content } = message;
+    console.log(message)
   
     try {
       // Vérifiez si le groupe existe
@@ -127,14 +252,15 @@ io.on('connection', (socket) => {
   
       // Vérifiez si l'utilisateur existe
       const user = await prisma.user.findUnique({
-        where: { id: sender },
+        where: { user_id: sender },
       });
   
       if (!user) {
+
         // Si l'utilisateur n'existe pas, vous pouvez le créer ici
         await prisma.user.create({
           data: {
-            id: sender,
+            user_id: sender,
           },
         });
       }
@@ -157,8 +283,8 @@ io.on('connection', (socket) => {
   
       // Émettez les conversations mises à jour
       socket.emit('allConversations', conversations);
-      console.log(message)
       socket.emit('message', message);
+
     } catch (error) {
       console.error('Erreur lors de l\'envoi du message:', error.message);
       socket.emit('error', error.message);
@@ -178,3 +304,5 @@ app.get('/conversations', (req, res) => {
 server.listen(5000, () => {
   console.log('Server is running on port 5000');
 });
+
+
