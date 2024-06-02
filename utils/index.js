@@ -1,4 +1,6 @@
 import dayjs from 'dayjs'
+var relativeTime = require('dayjs/plugin/relativeTime')
+dayjs.extend(relativeTime)
 
 const env = process.env.NODE_ENV;
 
@@ -31,6 +33,15 @@ export const formatDate = (value, format = 'MMM D, YYYY hh:mm') => {
       value.setUTCMonth(value.getMonth());
   }
   return dayjs(value).format(format)
+}
+export const relativeDateFormatter = (value) => {
+  if (!value.toLowerCase().includes('z')) {
+    value = new Date(value);
+    value.setUTCHours(value.getHours(), value.getMinutes());
+    value.setUTCFullYear(value.getFullYear());
+    value.setUTCMonth(value.getMonth());
+  }
+  return dayjs(value).fromNow(true);
 }
 
 export const showLoader = (mode = true)=>{

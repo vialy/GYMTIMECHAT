@@ -1,7 +1,8 @@
 <template>
-  <v-container>
+  <v-container fluid>
     <v-row>
-      <v-col cols="4">
+      <!-- Liste des conversations -->
+      <v-col cols="12" md="4" v-if="!selectedConversation">
         <v-list dense>
           <div style="display: flex; align-items: center; justify-content: space-between;">
             <p style="font-weight: bold; padding-left: 20px;">Conversations</p>
@@ -21,9 +22,6 @@
             </v-menu>
           </div>
           <v-list-item v-for="conversation in conversations" :key="conversation.id" @click="selectConversation(conversation)">
-            <!-- <v-list-item-avatar>
-              <v-img :src="conversation.picture"></v-img>
-            </v-list-item-avatar> -->
             <v-list-item-content>
               <v-list-item-title>{{ conversation.name }}</v-list-item-title>
               <v-list-item-subtitle>
@@ -35,20 +33,27 @@
                 }}
               </v-list-item-subtitle>
               <v-list-item-action>
-                <v-list-item-action-text>{{ 
-                  conversation.messages[conversation.messages.length-1]?.content &&
-                  conversation.messages[conversation.messages.length-1]?.createdAt 
-                }}</v-list-item-action-text>
+                <v-list-item-action-text>
+                  {{ 
+                    conversation.messages[conversation.messages.length-1]?.content &&
+                    conversation.messages[conversation.messages.length-1]?.createdAt 
+                  }}
+                </v-list-item-action-text>
               </v-list-item-action>
             </v-list-item-content>
           </v-list-item>
         </v-list>
       </v-col>
-      <v-col cols="8">
+
+      <!-- Vue de la conversation -->
+      <v-col cols="12" v-if="selectedConversation">
         <v-card>
           <v-card-title>
-            <!-- <span>Conversation name</span> -->
-            <span v-if="selectedConversation">{{ selectedConversation.name }}</span>
+            <v-btn icon @click="leaveConversation">
+              <v-icon>mdi-arrow-left</v-icon>
+            </v-btn>
+            <span v-if="selectedConversation">{{ selectedConversation.name }}</span></br>
+            <span class="userGroupName" v-if="selectedConversation">  {{ getFormattedUserNames(selectedConversation) }}</span>
             <v-spacer></v-spacer>
             <v-menu offset-y v-if="selectedConversation">
               <template v-slot:activator="{ on, attrs }">
@@ -58,19 +63,14 @@
               </template>
               <v-list>
                 <v-list-item>
-                  <v-btn v-if="selectedConversation" @click="leaveConversation">close chat</v-btn>
+                  <v-btn v-if="selectedConversation" @click="leaveConversation">Fermer le chat</v-btn>
                 </v-list-item>
                 <v-list-item>
-                  <v-btn v-if="selectedConversation" @click="openAddUserDialog">Add user to chat</v-btn>
+                  <v-btn v-if="selectedConversation" @click="openAddUserDialog">Ajouter un utilisateur</v-btn>
                 </v-list-item>
                 <v-list-item>
-                  <v-btn v-if="selectedConversation" @click="deleteChat">Delete chat</v-btn>
+                  <v-btn v-if="selectedConversation" @click="deleteChat">Supprimer le chat</v-btn>
                 </v-list-item>
-                <!-- <v-list-item>
-                  <v-btn @click="chooseUser">
-                    <v-list-item-title>Choisir un utilisateur</v-list-item-title>
-                  </v-btn>
-                </v-list-item> -->
               </v-list>
             </v-menu>
           </v-card-title>
@@ -78,97 +78,103 @@
             <div v-if="selectedConversation" class="messages"> 
               <div v-for="message in selectedConversation.messages" :key="message.time" :class="{'message-right': message.userId === userId, 'message-left': message.userId !== userId}">
                 <div :class="{'blue lighten-4': message.userId === userId, 'green lighten-4': message.userId !== userId}" class="message-bubble">
-                  <small style="font-weight: bold;">{{ message.sender }}</small>
+                  <v-avatar v-if="getUserById(message.userId)?.avatar || 'https://cdn.vuetifyjs.com/images/john.jpg'" class="mr-2">
+                    <!-- <img :src="getUserById(message.userId)?.avatar" alt="Avatar" /> -->
+                    <img :src="getUserById(message.userId)?.avatar || 'https://cdn.vuetifyjs.com/images/john.jpg'" alt="Avatar" />
+                  </v-avatar>
+                  <small style="font-weight: bold;">{{ getUserById(message.userId)?.firstName }} {{ getUserById(message.userId)?.lastName }}</small>
                   <p style="margin-bottom: 0px;">{{ message.content }}</p>
-                  <small>{{ message.createdAt }}</small>
+                  <small>{{ relativeDateFormatter(message.createdAt) }}</small>
                 </div>
               </div>
             </div>
+
+            
           </v-card-text>
           <v-card-actions v-if="selectedConversation">
             <input type="text" v-model="newMessage" auto-grow outlined placeholder="Type a message..." class="message-input"/>
             <span v-if="newMessage.length > 0">
-              <v-btn @click="sendMessage" color="primary">Send</v-btn>
+              <v-btn @click="sendMessage" color="primary">Envoyer</v-btn>
             </span>
           </v-card-actions>
         </v-card>
       </v-col>
+
     </v-row>
 
-    <!-- Modal for creating a new conversation -->
+    <!-- Modal pour créer une nouvelle conversation -->
     <v-dialog v-model="dialog" max-width="500px">
-        <v-card>
-          <v-card-title>
-            <span class="headline">Créer une nouvelle conversation</span>
-          </v-card-title>
-          <v-card-text>
-            <v-form ref="form" v-model="valid">
-              <v-text-field
-                v-model="groupName"
-                label="Nom du groupe"
-                :rules="[rules.required]"
-                required
-              ></v-text-field>
-
-              <v-select
-                v-model="selectedMembers"
-                :items="members"
-                item-text="firstName"
-                item-value="_id"
-                label="Membres"
-                :rules="[rules.required]"
-                multiple
-                chips
-              ></v-select>
-            </v-form>
-          </v-card-text>
-          <v-card-actions>
-            <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="closeDialog">Annuler</v-btn>
-            <v-btn color="blue darken-1" text @click="createConversation">Créer</v-btn>
-          </v-card-actions>
-        </v-card>
+      <v-card>
+        <v-card-title>
+          <span class="headline">Créer une nouvelle conversation</span>
+        </v-card-title>
+        <v-card-text>
+          <v-form ref="form" v-model="valid">
+            <v-text-field
+              v-model="groupName"
+              label="Nom du groupe"
+              :rules="[rules.required]"
+              required
+            ></v-text-field>
+            <v-select
+              v-model="selectedMembers"
+              :items="members"
+              item-text="firstName"
+              item-value="_id"
+              label="Membres"
+              :rules="[rules.required]"
+              multiple
+              chips
+            ></v-select>
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="blue darken-1" text @click="closeDialog">Annuler</v-btn>
+          <v-btn color="blue darken-1" text @click="createConversation">Créer</v-btn>
+        </v-card-actions>
+      </v-card>
     </v-dialog>
 
-    <!-- Add user to conversation dialog -->
+    <!-- Modal pour ajouter des utilisateurs à la conversation -->
     <v-dialog v-model="addUserDialog" max-width="500px">
-        <v-card>
-          <v-card-title>
-            <span class="headline">Add users</span>
-          </v-card-title>
-          <v-card-text>
-            <v-form ref="form" v-model="valid">
-              <v-select
-                v-model="selectedMembers"
-                :items="members"
-                item-text="firstName"
-                item-value="_id"
-                label="Membres"
-                :rules="[rules.required]"
-                multiple
-                chips
-              ></v-select>
-            </v-form>
-          </v-card-text>
-          <v-card-actions>
-            <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="closeAddUserDialog">Annuler</v-btn>
-            <v-btn color="blue darken-1" text @click="addUserToChat">Créer</v-btn>
-          </v-card-actions>
-        </v-card>
+      <v-card>
+        <v-card-title>
+          <span class="headline">Ajouter des utilisateurs</span>
+        </v-card-title>
+        <v-card-text>
+          <v-form ref="form" v-model="valid">
+            <v-select
+              v-model="selectedMembers"
+              :items="members"
+              item-text="firstName"
+              item-value="_id"
+              label="Membres"
+              :rules="[rules.required]"
+              multiple
+              chips
+            ></v-select>
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="blue darken-1" text @click="closeAddUserDialog">Annuler</v-btn>
+          <v-btn color="blue darken-1" text @click="addUserToChat">Ajouter</v-btn>
+        </v-card-actions>
+      </v-card>
     </v-dialog>
-
 
   </v-container>
 </template>
 
 <script>
 import io from 'socket.io-client';
-import moment from 'moment'
+import { relativeDateFormatter } from '../utils';
 
 export default {
   data() {
     return {
+      relativeDateFormatter,
       userId: "",
       socket: null,
       conversations: [],
@@ -187,99 +193,115 @@ export default {
   },
   mounted() {
     this.userId = "fca087c90d6c4ed582c1e7f1b8f16ef2";
-    // this.userId = localStorage.getItem("userId");
     this.fetchMembers();
-    // this.fetchUserInfo();
     this.socket = io('http://localhost:5000');
     this.socket.emit("getConversations");
-    this.socket.on("allConversations", conversations=>{
+    this.socket.on("allConversations", conversations => {
       this.conversations = conversations;
-      console.log(this.selectedConversation);
+      // Update selected conversation if needed
+      if (this.selectedConversation) {
+        this.selectedConversation = this.conversations.find(conv => conv.id === this.selectedConversation.id) || null;
+      }
     });
 
     this.socket.on('message', (message) => {
       const conversation = this.conversations.find(conv => conv.id === message.groupId);
       if (conversation) {
-        this.selectedConversation.messages.push(message);
+        conversation.messages.push(message);
+        // If the conversation is selected, update it
+        if (this.selectedConversation && this.selectedConversation.id === conversation.id) {
+          this.selectedConversation.messages = [...conversation.messages];
+        }
       }
     });
 
+    // Listen for conversationDeleted event
+    this.socket.on('conversationDeleted', (deletedConversationId) => {
+      this.conversations = this.conversations.filter(conv => conv.id !== deletedConversationId);
+      this.selectedConversation = null; // Return to the conversation list view
+    });
+
+    // Listen for newConversation event
+    this.socket.on('newConversation', (newConversationId) => {
+      this.selectedConversation = this.conversations.find(conv => conv.id === newConversationId);
+    });
   },
   methods: {
-
+      getUserById(userId) {
+      const u = this.members.find(member => member._id === userId);
+      console.log(u);
+        return u;
+    },
+    getUserNamesInConversation(conversation) {
+    return conversation.userGroup.map(userGroup => {
+      const user = this.getUserById(userGroup.user.user_id);
+      return user ? `${user.firstName}` : 'Unknown User';
+    });
+  },
+  getFormattedUserNames(conversation) {
+    const userNames = this.getUserNamesInConversation(conversation);
+    if (userNames.length > 6) {
+      return userNames.slice(0, 6).join(', ') + '...';
+    }
+    return userNames.join(', ');
+  },
     selectConversation(conversation) {
-      this.selectedConversation = conversation;
+      this.selectedConversation = this.conversations.find(conv => conv.id === conversation.id);
       this.socket.emit('joinConversation', conversation.id);
     },
-
     leaveConversation() {
       this.selectedConversation = null;
     },
-
-    addUserToChat(){
-
+    addUserToChat() {
       let data = {
         conversationId: this.selectedConversation.id,
-        users: this.members
-      }
-      this.socket.emit("addUserToChat", data)
-      this.members = []
-      this.addUserDialog = false
-
+        users: this.selectedMembers // Utilisez selectedMembers au lieu de members
+      };
+      this.socket.emit("addUserToChat", data);
+      this.selectedMembers = [];
+      this.addUserDialog = false;
     },
-
-    deleteChat(){
-      if(confirm('Do you wan tit delete the chat ?')){
+    
+    deleteChat() {
+      if (confirm('Voulez-vous supprimer le chat ?')) {
         let data = {
-          groupId: this.selectedConversation,
+          groupId: { id: this.selectedConversation.id }, // Assurez-vous que `id` est bien défini
           admin: this.userId
-        }
-        this.socket.emit("deleteChat", data)
+        };
+        console.log(data.groupId);
+        this.socket.emit("deleteChat", data);
       }
     },
-
     sendMessage() {
+        if (this.newMessage.trim() === '') return;
       const message = {
         conversationId: this.selectedConversation.id,
         sender: this.userId,
         content: this.newMessage,
         date: new Date().toLocaleTimeString()
-      }
-
+      };
       this.socket.emit('sendMessage', message);
       this.newMessage = '';
     },
 
-    async openAddUserDialog(){
-      this.addUserDialog = true
-    },
     
-    async closeAddUserDialog(){
-      this.addUserDialog = false
+    async openAddUserDialog() {
+      this.addUserDialog = true;
     },
-
+    async closeAddUserDialog() {
+      this.addUserDialog = false;
+    },
     async openCreateConversation() {
       this.dialog = true;
     },
-
     closeDialog() {
       this.dialog = false;
     },
-
-    async fetchUserInfo(){
-      try {
-        const response = await fetch("https://gymtime-backend.onrender.com/v1/user/user-info");
-        localStorage.setItem("userInfo", response.data)
-      } catch (error) {
-        console.log(error);
-      }
-    },
-
     async fetchMembers() {
       try {
         const myHeaders = new Headers();
         myHeaders.append("Content-Type", "application/json");
-        myHeaders.append("Authorization", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmaXJzdE5hbWUiOiJBbnNlbCIsImxhc3ROYW1lIjoiQXl1ayIsImdlbmRlciI6MCwidXNlclR5cGUiOjUsImlzRW1haWxWZXJpZmllZCI6dHJ1ZSwiZW1haWwiOiJheXVla3BAZ21haWwuY29tIiwic2hvcnRJZCI6IkFVUTRMOUxMNExPOUhBOVciLCJhdmF0YXIiOiJodHRwczovL2Jpei50cmFuemFrLm5ldC9sb2dvLnBuZyIsImJpbyI6IlRoaXMgaXMgbXkgcGVyc29uYWwgYWNjb3VudCBJIGFtIHRoZSBtYW4gb2YgbWVuIiwidXNlcklkIjoiZmNhMDg3YzkwZDZjNGVkNTgyYzFlN2YxYjhmMTZlZjIiLCJpYXQiOjE3MTY5OTU5NzIsImV4cCI6MTcyNDc3MTk3Mn0.AlmkBqBcPqkZ64YxteC-xW_vfJ2jAKBpbHw5BeRy7ds");
+        myHeaders.append("Authorization", "your-token-here");
 
         const requestOptions = {
           method: "POST",
@@ -287,38 +309,35 @@ export default {
           body: JSON.stringify({}),
           redirect: "follow"
         };
-        const response = await fetch('https://gymtime-backend.onrender.com/v1/user/services/list', requestOptions);
-        const data = await response.json();
-        let membersList = data?.data.list;
-        console.log(membersList)
-        this.members = [...membersList];
-
+        this.$request.post(this.$request.baseUrl + '/v1/user/services/list').then(res => {
+          if (res.success) {
+            let membersList = res.data.list;
+            this.members = [...membersList];
+            console.log(this.members);
+          }
+        }).catch(err => {
+          console.log(err);
+        });
       } catch (error) {
         console.error('Erreur lors de la récupération des membres:', error);
       }
-      this.groupName = ''
-
+      this.groupName = '';
     },
-
     createConversation() {
       if (this.$refs.form.validate()) {
-        this.socket.emit("createConversation", { name : this.groupName, users: this.selectedMembers, admin: this.userId});
-        this.selectedMembers = []
-        this.groupName = ''
+        this.socket.emit("createConversation", { name: this.groupName, users: this.selectedMembers, admin: this.userId });
+        this.selectedMembers = [];
+        this.groupName = '';
         this.closeDialog();
       }
     },
-    
-    chooseUser() {
-      console.log('Choisir un utilisateur');
-    },
-
   }
 };
 </script>
 
+
 <style scoped>
-.message-input{
+.message-input {
   width: 100%;
   border: 1px solid #adadad;
   background-color: #f4f4f4;
@@ -328,7 +347,7 @@ export default {
 }
 .messages {
   max-height: 50vh !important;
-  height:  50vh !important;
+  height: 50vh !important;
   overflow-y: auto;
 }
 .message-left {
@@ -345,5 +364,9 @@ export default {
   margin: 5px;
   padding: 10px;
   border-radius: 15px;
+}
+.userGroupName
+{
+  font-size: 15px;
 }
 </style>

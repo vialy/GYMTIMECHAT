@@ -1,144 +1,152 @@
-import { getToken, showLoader, hideLoader, getEnv } from "../utils/index.js";
-import axios from 'axios'
+import { getToken, showLoader, hideLoader, createLoader, getEnv } from "../utils/index.js";
+import axios from 'axios';
+
+if (process.client) {
+  createLoader();
+}
 
 export default function ({ $toast, redirect }, inject) {
 
-  class Request{
-    constructor(){
-      if(!Request._instance) {
+  class Request {
+    constructor() {
+      if (!Request._instance) {
         this.spinnerCounter = 0;
-        // $onboarding has 'uc' in front, $api has 'cs' in front, $chat has 'im' in front, $files are going to tz staging/prod
-        this.baseUrl = 'http://ocalhost:6050';
+        this.baseUrl = "https://gymtime-backend.onrender.com";
         this.chatUrl = '';
-        this.uploadUrl ='http://ocalhost:6051';
-
+        this.uploadUrl = 'http://localhost:6051';
 
         this.instance = axios.create({
           baseURL: this.baseUrl,
           timeout: 60 * 1000 * 3 // 3 minutes
-        })
+        });
+        
         this.instance.interceptors.request.use(param => {
           if (param && param.data && param.data.isFormData) {
-            const postData = new FormData()
+            const postData = new FormData();
             if (param.data) {
-              const keys = Object.keys(param.data)
+              const keys = Object.keys(param.data);
               for (let i = 0; i < keys.length; i++) {
-                postData.append(keys[i], param.data[keys[i]])
+                postData.append(keys[i], param.data[keys[i]]);
               }
             }
-            param.data = postData
+            param.data = postData;
           }
-          return param
-        })
+          return param;
+        });
+
         Request._instance = this;
-      }else{
-        /**
-         * Making sure my counter's value continues from where the previous call left it. This is an implementation of singleton
-         */
-        this.spinnerCounter = Request._instance.spinnerCounter
-        this.baseUrl = Request._instance.baseUrl
-        this.chatUrl = Request._instance.chatUrl
-        this.uploadUrl = Request._instance.uploadUrl
-        this.instance = Request._instance.instance
+      } else {
+        this.spinnerCounter = Request._instance.spinnerCounter;
+        this.baseUrl = Request._instance.baseUrl;
+        this.chatUrl = Request._instance.chatUrl;
+        this.uploadUrl = Request._instance.uploadUrl;
+        this.instance = Request._instance.instance;
       }
     }
 
     processResponse(response, extra) {
-      try{
-        return response.then(res=>{
-          console.log(res);
-          if(res && res.errorMsg && !extra.hideError){
-            $toast.error(res.errorMsg, {timeout: 10000});
+      try {
+        return response.then(res => {
+          if (res && res.errorMsg && !extra.hideError) {
+            $toast.error(res.errorMsg, { timeout: 10000 });
           }
-        })
-      }catch(error){
-        console.log(error)
+          if(res && res.erroCode == 4001 || res.erroCode == 4002 || res.erroCode == 4003){
+            
+          }
+        });
+      } catch (error) {
+        console.log(error);
         return response;
       }
     }
 
-    processRequest(data){
+    processRequest(data) {
       if (data && data.isFormData) {
-        const postData = new FormData()
-        const keys = Object.keys(data)
+        const postData = new FormData();
+        const keys = Object.keys(data);
         for (let i = 0; i < keys.length; i++) {
-          postData.append('files', data[keys[i]])
+          postData.append('files', data[keys[i]]);
         }
-        data = postData
+        data = postData;
       }
       return data;
     }
 
-    setHeader(headers = {}){
-      this.token = getToken();
-      return  {
-        'Authorization': 'Bearer ' + getToken(),
+    setHeader(headers = {}) {
+      const token = process.client ? getToken() : '';
+      return {
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         "Accept": "application/json, text/plain, */*",
         ...headers
-      }
+      };
     }
 
-    handleShowSpinner(hideSpinner = false){
-      if(hideSpinner) return
-      this.spinnerCounter+=1;
+    handleShowSpinner(hideSpinner = false) {
+      if (hideSpinner) return;
+      this.spinnerCounter += 1;
       showLoader();
     }
 
-    handleHideSpinner(hideSpinner = false){
-      if(hideSpinner) return
-      this.spinnerCounter-=1;
-      if(this.spinnerCounter <= 1) return hideLoader();
+    handleHideSpinner(hideSpinner = false) {
+      if (hideSpinner) return;
+      this.spinnerCounter -= 1;
+      if (this.spinnerCounter <= 1) hideLoader();
     }
-    async post(url, data = {}, extra = {headers:{}, hideSpinner:false}) {
+
+    async post(url, data = {}, extra = { headers: {}, hideSpinner: false }) {
       return this.axios(url, data, extra);
     }
-    async axios(url = '', data = {}, extra = {headers:{}, hideSpinner:false}) {
-      this.handleShowSpinner(extra.hideSpinner)
+
+    async axios(url = '', data = {}, extra = { headers: {}, hideSpinner: false }) {
+      this.handleShowSpinner(extra.hideSpinner);
       const params = this.processRequest(data);
-      const response = await this.instance.post(url, params, {headers: this.setHeader(extra.headers)}).catch(e => {
-        this.handleHideSpinner(extra.hideSpinner)
+      const response = await this.instance.post(url, params, { headers: this.setHeader(extra.headers) }).catch(e => {
+        this.handleHideSpinner(extra.hideSpinner);
         throw new Error(e);
-      })
-      this.handleHideSpinner(extra.hideSpinner)
-      const parsedData = new Promise((resolve, reject) => { resolve(response.data)})
-      this.processResponse(parsedData, extra)
-      return parsedData
+      });
+      this.handleHideSpinner(extra.hideSpinner);
+      const parsedData = new Promise((resolve, reject) => { resolve(response.data) });
+      this.processResponse(parsedData, extra);
+      return parsedData;
     }
-    async put(url, data = {}, extra = {headers:{}, hideSpinner:false}) {
-      this.handleShowSpinner(extra.hideSpinner)
+
+    async put(url, data = {}, extra = { headers: {}, hideSpinner: false }) {
+      this.handleShowSpinner(extra.hideSpinner);
       const params = this.processRequest(data);
-      const response = await this.instance.put(url, params, {headers: this.setHeader(extra.headers)}).catch(e => {
-        this.handleHideSpinner(extra.hideSpinner)
+      const response = await this.instance.put(url, params, { headers: this.setHeader(extra.headers) }).catch(e => {
+        this.handleHideSpinner(extra.hideSpinner);
         throw new Error(e);
-      })
-      this.handleHideSpinner(extra.hideSpinner)
-      const parsedData = new Promise((resolve, reject) => { resolve(response.data)})
-      this.processResponse(parsedData, extra)
-      return parsedData
+      });
+      this.handleHideSpinner(extra.hideSpinner);
+      const parsedData = new Promise((resolve, reject) => { resolve(response.data) });
+      this.processResponse(parsedData, extra);
+      return parsedData;
     }
-    async chat(url, data = {}, extra = {headers:{}, hideSpinner:false}) {
-      return this.axios('/im/v1/room'+url, data, extra);
+
+    async chat(url, data = {}, extra = { headers: {}, hideSpinner: false }) {
+      return this.axios('/im/v1/room' + url, data, extra);
     }
-    async uploadFile(data = {}, extra = { headers: {}, hideSpinner:false}) {
-     return this.axios(this.uploadUrl, data, {...extra, headers: {...extra.headers, 'Content-Type': 'multipart/form-data; boundary=----'}});
+
+    async uploadFile(data = {}, extra = { headers: {}, hideSpinner: false }) {
+      return this.axios(this.uploadUrl, data, { ...extra, headers: { ...extra.headers, 'Content-Type': 'multipart/form-data; boundary=----' } });
     }
-    async get(url, extra = {headers:{}, hideSpinner:false}) {
-      this.handleShowSpinner(extra.hideSpinner)
-      const response = await this.instance.get(url, {headers: this.setHeader(extra.headers)}).catch(e => {
-        this.handleHideSpinner(extra.hideSpinner)
+
+    async get(url, extra = { headers: {}, hideSpinner: false }) {
+      this.handleShowSpinner(extra.hideSpinner);
+      const response = await this.instance.get(url, { headers: this.setHeader(extra.headers) }).catch(e => {
+        this.handleHideSpinner(extra.hideSpinner);
         throw new Error(e);
-      })
-      this.handleHideSpinner(extra.hideSpinner)
-      const parsedData = new Promise((resolve, reject) => { resolve(response.data)})
-      this.processResponse(parsedData, extra)
-      return parsedData
+      });
+      this.handleHideSpinner(extra.hideSpinner);
+      const parsedData = new Promise((resolve, reject) => { resolve(response.data) });
+      this.processResponse(parsedData, extra);
+      return parsedData;
     }
   }
 
-const request = new Request();
-inject('request', request);
+  const request = new Request();
+  inject('request', request);
 
-return request
-
+  return request;
 }
