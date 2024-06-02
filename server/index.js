@@ -55,8 +55,13 @@ io.on('connection', (socket) => {
   socket.on("getConversations",async ()=>{
     const conversations = await prisma.group.findMany(
       {
-        include:{
-          messages: true
+        include: {
+          messages: true,
+          userGroup: {
+            include: {
+              user: true
+            }
+          }
         }
       }
     );
@@ -119,12 +124,20 @@ io.on('connection', (socket) => {
       // Get all the groups and return them
       const conversations = await prisma.group.findMany(
         {
-          include:{
-            messages: true
+          include: {
+            messages: true,
+            userGroup: {
+              include: {
+                user: true
+              }
+            }
           }
         }
       );
       socket.emit("allConversations", conversations);
+
+      // Emit the new conversation
+      socket.emit("newConversation", newGroup.id);
 
     } catch (error) {
       console.error('Erreur lors de la création du groupe:', error);
@@ -133,87 +146,94 @@ io.on('connection', (socket) => {
   });
 
   // Add user to conversation
-  socket.on("addUserToChat", async (data)=>{
+  socket.on("addUserToChat", async (data) => {
     try {
       const usersNotInTable = [];
       const usersNotInConversation = [];
-
-      // Check  whether users exist
-      for (const userId of data.users){
+  
+      // Check whether users exist
+      for (const userId of data.users) {
         const user = await prisma.user.findFirst({
-          where: { user_id: userId._id.toString() },
+          where: { user_id: userId.toString() },
         });
         if (!user) {
-          usersNotInTable.push(userId._id);
+          usersNotInTable.push(userId);
         }
       }
-      
-      // Create user not yet existing
+  
+      // Create users not yet existing
       if (usersNotInTable.length > 0) {
         const createdUsers = await prisma.user.createMany({
           data: usersNotInTable.map((userId) => ({
             user_id: userId,
           })),
         });
-      
+  
         console.log("Created users:", createdUsers);
       } else {
         console.log("All users already exist in the table.");
       }
-
+  
       // Check if the user is already in the group
       for (const userId of data.users) {
-        const user = await prisma.user_Group.findFirst({
-          where: { 
-            id_user: userId._id,
+        const userGroup = await prisma.user_Group.findFirst({
+          where: {
+            id_user: userId,
             id_group: data.conversationId
           },
         });
-        if (!user) {
-          usersNotInConversation.push(userId._id);
+        if (!userGroup) {
+          usersNotInConversation.push(userId);
         }
       }
-
+  
       // Create users not yet in the conversation
       if (usersNotInConversation.length > 0) {
-        const createdUsers = await prisma.user_Group.createMany({
+        const createdUserGroups = await prisma.user_Group.createMany({
           data: usersNotInConversation.map((userId) => ({
             id_user: userId,
             id_group: data.conversationId
           })),
         });
-        console.log("Created users:", createdUsers);
+        console.log("Added users to the conversation:", createdUserGroups);
       } else {
-        console.log("All users already exist in the table.");
+        console.log("All users already exist in the conversation.");
       }
-
+  
       // Get all the groups and return them
-      const conversations = await prisma.group.findMany(
-        {
-          include:{
-            messages: true
+      const conversations = await prisma.group.findMany({
+        include: {
+          messages: true,
+          userGroup: {
+            include: {
+              user: true
+            }
           }
         }
-      );
-
+      });
+  
       console.log(conversations);
       socket.emit("allConversations", conversations);
-      
+  
     } catch (error) {
       console.log(error);
     }
   });
+  
 
   socket.on("deleteChat",  async (data)=>{
     console.log(data);
 
     try {
+      
+      // Suppression des relations utilisateur-conversation
       const user_converation = await prisma.user_Group.deleteMany({
         where:{
           id_group: data.groupId.id
         }
       });
 
+       // Suppression de la conversation
       const conversation = await prisma.group.delete({
         where:{
           ownerId: data.admin,
@@ -221,16 +241,25 @@ io.on('connection', (socket) => {
         }
       });
   
-      // Get all the groups and return them
-      const conversations = await prisma.group.findMany(
-        {
-          include:{
-            messages: true
+      // Récupérez toutes les conversations avec leurs messages
+      const conversations = await prisma.group.findMany({
+        include: {
+          messages: true,
+          userGroup: {
+            include: {
+              user: true
+            }
           }
         }
-      );
-      socket.emit("allConversations", conversations);
+      });
+  
+      // Émettez les conversations mises à jour
+      io.emit('allConversations', conversations);
       
+       // Inform the client that the conversation has been deleted
+      socket.emit('conversationDeleted', data.groupId.id);
+
+
     } catch (error) {
       throw new Error(error);
     }
@@ -266,24 +295,31 @@ io.on('connection', (socket) => {
       }
   
       // Créez le message et associez-le au groupe
-      const message = await prisma.message.create({
+      const newMessage = await prisma.message.create({
         data: {
           content,
           userId: sender,
           groupId: conversationId,
         },
       });
+
+      // Émettre le message à tous les clients connectés à cette conversation
+      io.to(conversationId).emit('message', newMessage);
   
       // Récupérez toutes les conversations avec leurs messages
       const conversations = await prisma.group.findMany({
         include: {
           messages: true,
-        },
+          userGroup: {
+            include: {
+              user: true
+            }
+          }
+        }
       });
   
       // Émettez les conversations mises à jour
-      socket.emit('allConversations', conversations);
-      socket.emit('message', message);
+      io.emit('allConversations', conversations);
 
     } catch (error) {
       console.error('Erreur lors de l\'envoi du message:', error.message);
